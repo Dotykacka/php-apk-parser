@@ -17,7 +17,7 @@ class XmlParser
     const START_TAG = 0x0102;
     const END_TAG = 0x0103;
     const TEXT_TAG = 0x0104;
-    
+
     const RES_STRING_POOL_TYPE = 0x0001;
     const RES_XML_START_ELEMENT_TYPE = 0x0102;
     const RES_XML_RESOURCE_MAP_TYPE = 0x0180;
@@ -36,7 +36,7 @@ class XmlParser
      * @var \SimpleXmlElement
      */
     private $xmlObject = NULL;
-    
+
 
     /**
      * @param Stream $apkStream
@@ -69,12 +69,12 @@ class XmlParser
     {
         $headerSize = $this->littleEndianShort($this->bytes, 1 * 2);
         $dataSize = $this->littleEndianWord($this->bytes, 2 * 2);
-        
+
         $off = $headerSize;
         $resIdsOffset = -1;
         $resIdsCount = 0;
-        
-        
+
+
         while ($off < ($dataSize-8))
         {
             $chunkType = $this->littleEndianShort($this->bytes, $off + 0 * 2);
@@ -99,10 +99,10 @@ class XmlParser
             {
                   break;  // Let the next loop take care of it, though we can really move the code to this loop.
             }
-            
+
             $off += $chunkSize;
         }
-        
+
         $indentCount = 0;
         $startTagLineNo = -2;
 
@@ -126,15 +126,15 @@ class XmlParser
                         $attrNameSi = $this->littleEndianWord($this->bytes, $off + 1 * 4);
                         $attrValueSi = $this->littleEndianWord($this->bytes, $off + 2 * 4);
                         $attrFlags = $this->littleEndianWord($this->bytes, $off + 3 * 4);
-                        $attrResId = $this->littleEndianWord($this->bytes, $off + 4 * 4); 
+                        $attrResId = $this->littleEndianWord($this->bytes, $off + 4 * 4);
                         $off += 5 * 4;
 
-                        $attrName = $this->compXmlString($this->bytes, $sitOff, $stOff, $attrNameSi); 
+                        $attrName = $this->compXmlString($this->bytes, $sitOff, $stOff, $attrNameSi);
                         $attrNameResID = $this->littleEndianWord($this->bytes, $resIdsOffset + ($attrNameSi * 4));
                         if (empty($attrName)) {
                             $attrName = $this->getResourceNameFromID($attrNameResID);
                         }
-                        
+
 
                         //-1 for 32bit PHP
                         //maybe will be better "if (dechex($attrValueSi) != 'ffffffff') {" ?
@@ -172,7 +172,7 @@ class XmlParser
                     // a string literal
                     // To skip it, read forward until finding the sentinal 0x00000000 after finding
                     // the sentinal 0xffffffff
-                    
+
                     $sentinal = -1;
                     while ($off < count($this->bytes)) {
                         $curr = $this->littleEndianWord($this->bytes, $off);
@@ -299,7 +299,7 @@ class XmlParser
         $signShifAmount = (PHP_INT_SIZE - 4) << 3; // the anount of bits to shift back and forth, so that we get the correct signage
         return (($arr[$off + 3] << 24 & 0xff000000 | $arr[$off + 2] << 16 & 0xff0000 | $arr[$off + 1] << 8 & 0xff00 | $arr[$off] & 0xFF) << $signShifAmount) >> $signShifAmount;
     }
-    
+
     /**
      * @param $arr
      * @param $off
@@ -310,7 +310,7 @@ class XmlParser
         $signShifAmount = (PHP_INT_SIZE - 2) << 3; // the anount of bits to shift back and forth, so that we get the correct signage
         return (($arr[$off + 1] << 8 & 0xff00 | $arr[$off] & 0xFF) << $signShifAmount) >> $signShifAmount;
     }
-    
+
 
     /**
      * Print XML content
@@ -328,9 +328,8 @@ class XmlParser
     {
         if (!$this->ready)
             $this->decompress();
-        $xml = utf8_encode($this->xml);
-        $xml = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x80-\x9F]/u', '', $xml);
-        return $xml;
+
+        return preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x80-\x9F]/u', '', $this->xml);
     }
 
     /**
@@ -352,7 +351,7 @@ class XmlParser
 
         return $this->xmlObject;
     }
-    
+
     public function getResourceNameFromID($id)
     {
         switch ($id)
@@ -1303,7 +1302,7 @@ class XmlParser
             case 0x10103b1: $resName="textAlignment"; break;
             case 0x10103b2: $resName="layoutDirection"; break;
             case 0x10103b3: $resName="paddingStart"; break;
-            case 0x10103b4: $resName="paddingEnd"; break;                                              
+            case 0x10103b4: $resName="paddingEnd"; break;
             case 0x10103b5: $resName="layout_marginStart"; break;
             case 0x10103b6: $resName="layout_marginEnd"; break;
             case 0x10103b7: $resName="layout_toStartOf"; break;

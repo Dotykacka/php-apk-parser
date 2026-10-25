@@ -183,9 +183,12 @@ class Parser
             1 => array('pipe', 'w'),
             2 => array('pipe', 'w'),
         );
-        $process = proc_open($command, $descriptorSpec, $pipes);
+        // PHP 8.5 warns when posix_spawn() cannot start the binary; report that as an ApkException instead
+        error_clear_last();
+        $process = @proc_open($command, $descriptorSpec, $pipes);
         if (!is_resource($process)) {
-            throw new ApkException('Unable to start process');
+            $error = error_get_last();
+            throw new ApkException('Unable to start process ' . $command[0] . ($error ? ': ' . $error['message'] : ''));
         }
 
         $stdout = stream_get_contents($pipes[1]);

@@ -10,7 +10,6 @@ namespace ApkParser;
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-
 class Stream
 {
     /**
@@ -22,8 +21,8 @@ class Stream
 
     /**
      * @param resource $stream File stream.
-     * @throws \Exception
      * @return \ApkParser\Stream
+     * @throws \Exception
      */
     public function __construct($stream)
     {
@@ -36,48 +35,12 @@ class Stream
     }
 
     /**
-     * Read the next character from stream.
-     *
-     * @param mixed $length
-     * @return string
-     */
-    public function read($length = 1)
-    {
-        return fread($this->stream, $length);
-    }
-
-    /**
-     * check if end of filestream
-     */
-    public function feof()
-    {
-        return feof($this->stream);
-    }
-
-    /**
      * Jump to the index!
      * @param int $offset
      */
     public function seek($offset)
     {
         fseek($this->stream, $offset);
-    }
-
-    /**
-     * Close the stream
-     */
-    public function close()
-    {
-        fclose($this->stream);
-    }
-
-    /**
-     * Read the next byte
-     * @return int
-     */
-    public function readByte()
-    {
-        return ord($this->read());
     }
 
     /**
@@ -98,13 +61,31 @@ class Stream
     }
 
     /**
-     * Write a string to the stream
-     *
-     * @param mixed $str
+     * check if end of filestream
      */
-    function write($str)
+    public function feof()
     {
-        fwrite($this->stream, $str);
+        return feof($this->stream);
+    }
+
+    /**
+     * Read the next byte
+     * @return int
+     */
+    public function readByte()
+    {
+        return ord($this->read());
+    }
+
+    /**
+     * Read the next character from stream.
+     *
+     * @param mixed $length
+     * @return string
+     */
+    public function read($length = 1)
+    {
+        return fread($this->stream, $length);
     }
 
     /**
@@ -112,25 +93,51 @@ class Stream
      *
      * @param mixed $byte
      */
-    function writeByte($byte)
+    public function writeByte($byte)
     {
         $this->write(chr($byte));
+    }
+
+    /**
+     * Write a string to the stream
+     *
+     * @param mixed $str
+     */
+    public function write($str)
+    {
+        fwrite($this->stream, $str);
     }
 
     /**
      * Write the stream to the given destionation directly without using extra memory like storing in an array etc.
      *
      * @param mixed $destination file path.
+     * @throws \Exception
      */
     public function save($destination)
     {
-        $destination = new Stream(is_resource($destination) ? $destination : fopen($destination, 'w+'));
+        $openedInternally = !is_resource($destination);
+        $destinationStream = $openedInternally ? fopen($destination, 'w+') : $destination;
+
+        if (!is_resource($destinationStream)) {
+            throw new \Exception("Invalid destination stream");
+        }
+
+        $destination = new Stream($destinationStream);
         while (!$this->feof()) {
             $destination->write($this->read());
         }
 
-        if (!is_resource($destination)) { // close the file if we opened it otwhise dont touch.
+        if ($openedInternally) { // Close only streams opened internally.
             $destination->close();
         }
+    }
+
+    /**
+     * Close the stream
+     */
+    public function close()
+    {
+        fclose($this->stream);
     }
 }

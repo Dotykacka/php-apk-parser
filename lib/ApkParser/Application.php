@@ -1,4 +1,5 @@
 <?php
+
 namespace ApkParser;
 
 /**
@@ -9,7 +10,6 @@ namespace ApkParser;
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-
 class Application
 {
     /**
@@ -40,6 +40,16 @@ class Application
     }
 
     /**
+     * @param $attrName
+     * @return string
+     */
+    public function getAttr($attrName)
+    {
+        $attr = get_object_vars($this->application);
+        return isset($attr['@attributes']) && isset($attr['@attributes'][$attrName]) ? (string)$attr['@attributes'][$attrName] : null;
+    }
+
+    /**
      * @return string
      */
     public function getLabel()
@@ -48,13 +58,11 @@ class Application
     }
 
     /**
-     * @param $attrName
      * @return string
      */
-    public function getAttr($attrName)
+    public function getActivityHash()
     {
-        $attr = get_object_vars($this->application);
-        return (string)$attr['@attributes'][$attrName];
+        return md5(implode('', $this->getActivityNameList()));
     }
 
     /**
@@ -69,13 +77,5 @@ class Application
         }
 
         return $names;
-    }
-
-    /**
-     * @return string
-     */
-    public function getActivityHash()
-    {
-        return md5(implode('', $this->getActivityNameList()));
     }
 }

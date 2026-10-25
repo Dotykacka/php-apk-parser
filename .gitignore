@@ -13,3 +13,10 @@ vendor/
 # Mac OS
 .DS_Store
 examples/extract_folder
+
+# PHPUnit
+.phpunit.result.cache
+.php-cs-fixer.cache
+
+.history
+.vscode

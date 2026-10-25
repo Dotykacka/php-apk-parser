@@ -9,36 +9,45 @@
  */
 
 use ApkParser\Parser;
+use ApkParser\Exceptions\ApkException;
 
-class ParserTest extends PHPUnit_Framework_TestCase
+class ParserTest extends \PHPUnit\Framework\TestCase
 {
     /**
      * @var ApkParser\Parser
      */
     private $subject;
 
-    public function setUp()
-    {
-        $file = __DIR__ . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'EBHS.apk';
-        $this->subject = new Parser($file);
-    }
-
+    /**
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testSanity()
     {
         $this->assertTrue(true);
     }
 
+    /**
+     * @throws \ApkParser\Exceptions\XmlParserException
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testPermissions()
     {
         $permissions = $this->subject->getManifest()->getPermissions();
 
-        $this->assertEquals(count($permissions), 4);
+        $this->assertCount(4, $permissions);
         $this->assertArrayHasKey('INTERNET', $permissions, "INTERNET permission not found!");
         $this->assertArrayHasKey('CAMERA', $permissions, "CAMERA permission not found!");
         $this->assertArrayHasKey('BLUETOOTH', $permissions, "BLUETOOTH permission not found!");
         $this->assertArrayHasKey('BLUETOOTH_ADMIN', $permissions, "BLUETOOTH_ADMIN permission not found!");
     }
 
+    /**
+     * @throws \ApkParser\Exceptions\XmlParserException
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testApplication()
     {
         $application = $this->subject->getManifest()->getApplication();
@@ -48,15 +57,78 @@ class ParserTest extends PHPUnit_Framework_TestCase
         $this->assertEquals($application->getLabel(), '0x7f050001');
     }
 
+    /**
+     * @throws \ApkParser\Exceptions\XmlParserException
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testIconResources()
     {
         $application = $this->subject->getManifest()->getApplication();
         $resources = $this->subject->getResources($application->getIcon());
 
-        $expected = array('res/drawable-ldpi/ebhs.png', 'res/drawable-mdpi/ebhs.png', 'res/drawable-hdpi/ebhs.png');
+        $expected = ['res/drawable-ldpi/ebhs.png', 'res/drawable-mdpi/ebhs.png', 'res/drawable-hdpi/ebhs.png'];
         $this->assertEquals($resources, $expected);
     }
 
+    public function testGetMissingResources()
+    {
+        $this->assertFalse($this->subject->getResources('missing'));
+    }
+
+    /**
+     * @throws \Exception
+     */
+    public function testManifestOnlyFalseLoadsResources()
+    {
+        $parser = new Parser($this->getApkFixturePath(), ['manifest_only' => false]);
+
+        $this->assertNotEmpty($parser->getAllResources());
+    }
+
+    /**
+     * @throws \Exception
+     */
+    public function testManifestOnlyTrueSkipsResources()
+    {
+        $parser = new Parser($this->getApkFixturePath(), ['manifest_only' => true]);
+
+        $this->assertSame([], $parser->getAllResources());
+        $this->assertFalse($parser->getResources('0x7f020001'));
+    }
+
+    /**
+     * @throws \Exception
+     */
+    public function testGetClassesThrowsWhenJarPathMissing()
+    {
+        $parser = new Parser($this->getApkFixturePath(), [
+            'manifest_only' => true,
+            'jar_path' => __DIR__ . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'missing-dedexer.jar',
+        ]);
+
+        $this->expectException(ApkException::class);
+        $parser->getClasses();
+    }
+
+    /**
+     * @throws \Exception
+     */
+    public function testGetClassesThrowsWhenJavaBinaryMissing()
+    {
+        $parser = new Parser($this->getApkFixturePath(), [
+            'manifest_only' => true,
+            'java_binary' => 'definitely_missing_java_binary_12345',
+        ]);
+
+        $this->expectException(ApkException::class);
+        $parser->getClasses();
+    }
+
+    /**
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testIconStream()
     {
         $stream = $this->subject->getStream('res/drawable-hdpi/ebhs.png');
@@ -64,16 +136,37 @@ class ParserTest extends PHPUnit_Framework_TestCase
         $file = __DIR__ . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'ebhs.png';
         $expected = file_get_contents($file);
 
-        $this->assertTrue(is_resource($stream));
+        $this->assertIsResource($stream);
         $this->assertEquals(base64_encode($icon), base64_encode($expected));
     }
 
+    /**
+     * @throws \ApkParser\Exceptions\XmlParserException
+     * @throws \PHPUnit\Framework\ExpectationFailedException
+     * @throws \SebastianBergmann\RecursionContext\InvalidArgumentException
+     */
     public function testLabelResources()
     {
         $application = $this->subject->getManifest()->getApplication();
         $resources = $this->subject->getResources($application->getLabel());
 
-        $expected = array('EBHS');
+        $expected = ['EBHS'];
         $this->assertEquals($resources, $expected);
+    }
+
+    /**
+     * @throws Exception
+     */
+    protected function setUp(): void
+    {
+        $this->subject = new Parser($this->getApkFixturePath(), ['manifest_only' => false]);
+    }
+
+    /**
+     * @return string
+     */
+    private function getApkFixturePath()
+    {
+        return __DIR__ . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'EBHS.apk';
     }
 }

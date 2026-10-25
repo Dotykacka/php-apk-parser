@@ -103,7 +103,7 @@ class Archive extends \ZipArchive
             $xmlParser = new XmlParser(new Stream($this->getStream($name)));
             return $xmlParser->getXmlString();
         } else {
-            return parent::getFromName($name, $length, $flags);
+            return parent::getFromName($name, $length ?? 0, $flags ?? 0);
         }
     }
 

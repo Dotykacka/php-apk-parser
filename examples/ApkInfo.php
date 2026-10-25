@@ -20,22 +20,38 @@ echo "Package Name      : " . $manifest->getPackageName() . "" . PHP_EOL;
 echo "Version           : " . $manifest->getVersionName() . " (" . $manifest->getVersionCode() . ")" . PHP_EOL;
 echo "Min Sdk Level     : " . $manifest->getMinSdkLevel() . "" . PHP_EOL;
 echo "Min Sdk Platform  : " . $manifest->getMinSdk()->platform . "" . PHP_EOL;
+echo "Target Sdk Level     : " . $manifest->getTargetSdkLevel() . "" . PHP_EOL;
+echo "Target Sdk Platform  : " . $manifest->getTargetSdk()->platform . "" . PHP_EOL;
 echo PHP_EOL;
 echo "------------- Permssions List -------------" . PHP_EOL;
 
 // find max length to print more pretty.
 $perm_keys = array_keys($permissions);
-$perm_key_lengths = array_map(function ($perm) {
-    return strlen($perm);
-}, $perm_keys);
+$perm_key_lengths = array_map(
+    function ($perm) {
+        return strlen($perm);
+    },
+    $perm_keys
+);
 $max_length = max($perm_key_lengths);
 
 foreach ($permissions as $perm => $detail) {
     echo str_pad($perm, $max_length + 4, ' ') . "=> " . $detail['description'] . " " . PHP_EOL;
-    echo str_pad('', $max_length - 5, ' ') . ' cost    =>  ' . ($detail['flags']['cost'] ? 'true' : 'false') . " " . PHP_EOL;
-    echo str_pad('', $max_length - 5, ' ') . ' warning =>  ' . ($detail['flags']['warning'] ? 'true' : 'false') . " " . PHP_EOL;
-    echo str_pad('', $max_length - 5, ' ') . ' danger  =>  ' . ($detail['flags']['danger'] ? 'true' : 'false') . " " . PHP_EOL;
-
+    echo str_pad(
+        '',
+        $max_length - 5,
+        ' '
+    ) . ' cost    =>  ' . ($detail['flags']['cost'] ? 'true' : 'false') . " " . PHP_EOL;
+    echo str_pad(
+        '',
+        $max_length - 5,
+        ' '
+    ) . ' warning =>  ' . ($detail['flags']['warning'] ? 'true' : 'false') . " " . PHP_EOL;
+    echo str_pad(
+        '',
+        $max_length - 5,
+        ' '
+    ) . ' danger  =>  ' . ($detail['flags']['danger'] ? 'true' : 'false') . " " . PHP_EOL;
 }
 
 

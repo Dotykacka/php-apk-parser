@@ -1,4 +1,5 @@
 <?php
+
 namespace ApkParser;
 
 /**
@@ -9,19 +10,18 @@ namespace ApkParser;
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-
 class ResourcesParser
 {
-    const RES_STRING_POOL_TYPE = 0x0001;
-    const RES_TABLE_TYPE = 0x0002;
-    const RES_TABLE_PACKAGE_TYPE = 0x0200;
-    const RES_TABLE_TYPE_TYPE = 0x0201;
-    const RES_TABLE_TYPE_SPEC_TYPE = 0x0202;
+    public const RES_STRING_POOL_TYPE = 0x0001;
+    public const RES_TABLE_TYPE = 0x0002;
+    public const RES_TABLE_PACKAGE_TYPE = 0x0200;
+    public const RES_TABLE_TYPE_TYPE = 0x0201;
+    public const RES_TABLE_TYPE_SPEC_TYPE = 0x0202;
     // The 'data' holds a ResTable_ref, a reference to another resource table entry.
-    const TYPE_REFERENCE = 0x01;
+    public const TYPE_REFERENCE = 0x01;
     // The 'data' holds an index into the containing resource table's global value string pool.
-    const TYPE_STRING = 0x03;
-    const FLAG_COMPLEX = 0x0001;
+    public const TYPE_STRING = 0x03;
+    public const FLAG_COMPLEX = 0x0001;
 
     /**
      * @var SeekableStream
@@ -34,6 +34,7 @@ class ResourcesParser
 
     private $packageId = 0;
     private $resources = array();
+    private $resourcesByName = array();
 
     /**
      * @param SeekableStream $stream
@@ -43,15 +44,6 @@ class ResourcesParser
     {
         $this->stream = $stream;
         $this->decompress();
-    }
-
-    /**
-     * @param $key
-     * @return mixed
-     */
-    public function getResources($key)
-    {
-        return $this->resources[strtolower($key)];
     }
 
     /**
@@ -85,12 +77,14 @@ class ResourcesParser
                     $this->valueStringPool = $this->processStringPool($this->stream->copyBytes($chunkSize));
                 }
                 $realStringsCount++;
-            } else if ($chunkType == self::RES_TABLE_PACKAGE_TYPE) {
-                $this->stream->seek($pos);
-                $this->processPackage($this->stream->copyBytes($chunkSize));
-                $realPackagesCount++;
             } else {
-                throw new \Exception('Unsupported Type');
+                if ($chunkType == self::RES_TABLE_PACKAGE_TYPE) {
+                    $this->stream->seek($pos);
+                    $this->processPackage($this->stream->copyBytes($chunkSize));
+                    $realPackagesCount++;
+                } else {
+                    throw new \Exception('Unsupported Type');
+                }
             }
 
             $this->stream->seek($pos + $chunkSize);
@@ -104,6 +98,74 @@ class ResourcesParser
         if ($realPackagesCount != $packagesCount) {
             throw new \Exception('Real package count not equals the declared count.');
         }
+    }
+
+    /**
+     * @param SeekableStream $data
+     * @return array
+     */
+    private function processStringPool(SeekableStream $data)
+    {
+        $data->readInt16LE(); // type
+        $data->readInt16LE(); // headerSize
+        $data->readInt32LE(); // size
+        $stringsCount = $data->readInt32LE();
+        $data->readInt32LE(); // stylesCount
+        $flags = $data->readInt32LE();
+        $stringsStart = $data->readInt32LE();
+        $data->readInt32LE(); // stylesStart
+
+        $offsets = array();
+        for ($i = 0; $i < $stringsCount; $i++) {
+            $offsets[$i] = $data->readInt32LE();
+        }
+        $isUtf8 = ($flags & 256) != 0;
+
+        $strings = array();
+        for ($i = 0; $i < $stringsCount; $i++) {
+            $data->seek($stringsStart + $offsets[$i]);
+            if ($isUtf8) {
+                $this->readStringPoolLength8($data); // utf16 length prefix, not required for value extraction.
+                $byteLength = $this->readStringPoolLength8($data);
+                $strings[$i] = $byteLength > 0 ? $data->read($byteLength) : '';
+                $data->readByte(); // Null terminator.
+            } else {
+                $charLength = $this->readStringPoolLength16($data);
+                $raw = $charLength > 0 ? $data->read($charLength * 2) : '';
+                $data->readInt16LE(); // Null terminator.
+                $strings[$i] = $charLength > 0 ? mb_convert_encoding($raw, 'UTF-8', 'UTF-16LE') : '';
+            }
+        }
+        return $strings;
+    }
+
+    /**
+     * @param SeekableStream $data
+     * @return int
+     */
+    private function readStringPoolLength8(SeekableStream $data)
+    {
+        $length = $data->readByte();
+        if (($length & 0x80) != 0) {
+            $length = (($length & 0x7f) << 8) | $data->readByte();
+        }
+
+        return $length;
+    }
+
+    /**
+     * @param SeekableStream $data
+     * @return int
+     */
+    private function readStringPoolLength16(SeekableStream $data)
+    {
+        $firstLength = ($data->readByte() | ($data->readByte() << 8));
+        if (($firstLength & 0x8000) == 0) {
+            return $firstLength;
+        }
+
+        $secondLength = ($data->readByte() | ($data->readByte() << 8));
+        return (($firstLength & 0x7fff) << 16) | $secondLength;
     }
 
     /**
@@ -153,9 +215,11 @@ class ResourcesParser
             if ($chunkType == self::RES_TABLE_TYPE_SPEC_TYPE) {
                 $data->seek($pos);
                 $this->processTypeSpec($data->copyBytes($chunkSize));
-            } else if ($chunkType == self::RES_TABLE_TYPE_TYPE) {
-                $data->seek($pos);
-                $this->processType($data->copyBytes($chunkSize));
+            } else {
+                if ($chunkType == self::RES_TABLE_TYPE_TYPE) {
+                    $data->seek($pos);
+                    $this->processType($data->copyBytes($chunkSize));
+                }
             }
 
             $data->seek($pos + $chunkSize);
@@ -163,64 +227,6 @@ class ResourcesParser
                 break;
             }
         }
-    }
-
-    /**
-     * @param SeekableStream $data
-     * @return array
-     */
-    private function processStringPool(SeekableStream $data)
-    {
-        $data->readInt16LE(); // type
-        $data->readInt16LE(); // headerSize
-        $data->readInt32LE(); // size
-        $stringsCount = $data->readInt32LE();
-        $data->readInt32LE(); // stylesCount
-        $flags = $data->readInt32LE();
-        $stringsStart = $data->readInt32LE();
-        $data->readInt32LE(); // stylesStart
-
-        $offsets = array();
-        for ($i = 0; $i < $stringsCount; $i++) {
-            $offsets[$i] = $data->readInt32LE();
-        }
-        $isUtf8 = ($flags & 256) != 0;
-
-        $strings = array();
-        for ($i = 0; $i < $stringsCount; $i++) {
-            $lastPosition = $data->position();
-            $pos = $stringsStart + $offsets[$i];
-            $data->seek($pos);
-            $len = $data->position();
-            $data->seek($lastPosition);
-            if ($len < 0) {
-                $data->readInt16LE(); // extendShort
-            }
-            $pos += 2;
-
-            $strings[$i] = '';
-            if ($isUtf8) {
-                $length = 0;
-                $data->seek($pos);
-                while ($data->readByte() != 0) {
-                    $length++;
-                }
-                if ($length > 0) {
-                    $data->seek($pos);
-                    $strings[$i] = $data->read($length);
-                } else {
-                    $strings[$i] = '';
-                }
-            } else {
-                $data->seek($pos);
-                while (($c = $data->read()) != 0) {
-                    $strings[$i] .= $c;
-                    $pos += 2;
-                }
-            }
-            // echo 'Parsed value: ', $strings[$i], PHP_EOL;
-        }
-        return $strings;
     }
 
     /**
@@ -257,14 +263,19 @@ class ResourcesParser
         $data->readInt16LE(); // res1
         $entriesCount = $data->readInt32LE();
         $entriesStart = $data->readInt32LE();
-        $data->readInt32LE(); // config_size
+        $config_size = $data->readInt32LE(); // config_size
 
         if ($headerSize + $entriesCount * 4 != $entriesStart) {
             throw new \Exception('HeaderSize, entriesCount and entriesStart are not valid.');
         }
 
+        // Skip the header data
+        $data->seek($headerSize - $config_size);
+        // Process config data TODO 未完成
+        $config = $this->processConfig($data->copyBytes($config_size));
+
         // Skip the config data
-        $data->seek($headerSize);
+        // $data->seek($headerSize);
 
         // Start to get entry indices
         $entryIndices = array();
@@ -285,7 +296,16 @@ class ResourcesParser
             $entryKey = $data->readInt32LE();
 
             $resourceIdString = '0x' . dechex($resourceId);
-            $entryKeyString = $this->keyStringPool[$entryKey];
+            $entryKeyString = array_key_exists($entryKey, $this->keyStringPool)
+                ? $this->keyStringPool[$entryKey]
+                : null;
+            $typeName = array_key_exists($id - 1, $this->typeStringPool)
+                ? $this->typeStringPool[$id - 1]
+                : null;
+
+            if (is_string($typeName) && is_string($entryKeyString) && $entryKeyString !== '') {
+                $this->putNamedResource($typeName, $entryKeyString, $resourceIdString);
+            }
             // echo 'Entry ' . $resourceIdString . ', key: ' . $entryKeyString;
 
             // Get the value (simple) or map (complex)
@@ -300,16 +320,18 @@ class ResourcesParser
                 if ($valueDataType == self::TYPE_STRING) {
                     $value = $this->valueStringPool[$valueData];
                     $this->putResource($resourceIdString, $value);
-                    // echo ', data: ' . $value;
-                } else if ($valueDataType == self::TYPE_REFERENCE) {
-                    $referenceIdString = '0x' . dechex($valueData);
-                    $this->putReferenceResource($resourceIdString, $referenceIdString);
-                    // echo ', reference: ' . $referenceIdString;
+                // echo ', data: ' . $value;
                 } else {
-                    $this->putResource($resourceIdString, $valueData);
-                    // echo ', data: ' . $valueData;
+                    if ($valueDataType == self::TYPE_REFERENCE) {
+                        $referenceIdString = '0x' . dechex($valueData);
+                        $this->putReferenceResource($resourceIdString, $referenceIdString);
+                    // echo ', reference: ' . $referenceIdString;
+                    } else {
+                        $this->putResource($resourceIdString, $valueData);
+                        // echo ', data: ' . $valueData;
+                    }
                 }
-                // echo PHP_EOL;
+            // echo PHP_EOL;
             } else {
                 // echo ', complex value, not printed.', PHP_EOL;
                 $data->readInt32LE(); // entry_parent
@@ -323,6 +345,78 @@ class ResourcesParser
                 }
             }
         }
+    }
+
+    /**
+     * @param SeekableStream $bytes
+     * @return array
+     */
+    private function processConfig($bytes)
+    {
+        $size = $bytes->size();
+
+        // 12
+        $config['size'] = $bytes->readInt32LE();
+        $config['mcc'] = $bytes->readInt16LE();
+        $config['mnc'] = $bytes->readInt16LE();
+        $bytes->backSeek(-4);
+        $config['imsi'] = $bytes->readInt32LE();
+
+        // 8
+        $config['language'] = $bytes->read(2);
+        $config['country'] = $bytes->read(2);
+        $bytes->backSeek(-4);
+        $config['locale'] = $bytes->read(4);
+
+        // 8
+        $config['orientation'] = $bytes->readByte();
+        $config['touchscreen'] = $bytes->readByte();
+        $config['density'] = $bytes->readInt16LE();
+        $bytes->backSeek(-4);
+        $config['screenType'] = $bytes->readInt32LE();
+
+        // 8
+        $config['keyboard'] = $bytes->readByte();
+        $config['navigation'] = $bytes->readByte();
+        $config['inputFlags'] = $bytes->readByte();
+        $config['inputPad0'] = $bytes->readByte();
+        $bytes->backSeek(-4);
+        $config['input'] = $bytes->readInt32LE();
+
+        if ($size > 36) {
+            // 8
+            $config['screenWidth'] = $bytes->readInt16LE();
+            $config['screenHeight'] = $bytes->readInt16LE();
+            $bytes->backSeek(-4);
+            $config['screenSize'] = $bytes->readInt32LE();
+
+            // 8
+            $config['sdVersion'] = $bytes->readInt16LE();
+            $config['minorVersion'] = $bytes->readInt16LE();
+            $bytes->backSeek(-4);
+            $config['version'] = $bytes->readInt32LE();
+
+            // 8
+            $config['screenLayout'] = $bytes->readByte();
+            $config['uiMode'] = $bytes->readByte();
+            $config['smallestScreenWidthDp'] = $bytes->readInt16LE();
+            $bytes->backSeek(-4);
+            $config['screenConfig'] = $bytes->readInt32LE();
+
+            // 4
+            $config['screenWidthDp'] = $bytes->readInt16LE();
+            $config['screenHeightDp'] = $bytes->readInt16LE();
+            $bytes->backSeek(-4);
+            $config['screenSizeDp'] = $bytes->readInt32LE();
+
+            // 4
+            $config['localeScript'] = $bytes->readInt32LE();
+
+            // 8
+            $config['localeVariant'] = $bytes->read(8);
+        }
+
+        return $config;
     }
 
     /**
@@ -351,5 +445,74 @@ class ResourcesParser
                 $this->putResource($valueData, $value);
             }
         }
+    }
+
+    /**
+     * @param string $typeName
+     * @param string $entryKey
+     * @param string $resourceId
+     */
+    private function putNamedResource($typeName, $entryKey, $resourceId)
+    {
+        $normalizedTypeName = strtolower(trim($typeName));
+        $normalizedEntryKey = strtolower(trim($entryKey));
+        if ($normalizedTypeName === '' || $normalizedEntryKey === '') {
+            return;
+        }
+
+        $resourceId = strtolower($resourceId);
+        $normalizedKeys = array(
+            $normalizedTypeName . '/' . $normalizedEntryKey,
+            '@' . $normalizedTypeName . '/' . $normalizedEntryKey,
+        );
+
+        foreach ($normalizedKeys as $normalizedKey) {
+            if (array_key_exists($normalizedKey, $this->resourcesByName) === false) {
+                $this->resourcesByName[$normalizedKey] = array();
+            }
+
+            if (in_array($resourceId, $this->resourcesByName[$normalizedKey], true) === false) {
+                $this->resourcesByName[$normalizedKey][] = $resourceId;
+            }
+        }
+    }
+
+    /**
+     * @param $key
+     * @return mixed
+     */
+    public function getResources($key)
+    {
+        $normalizedKey = strtolower(trim((string)$key));
+        if (array_key_exists($normalizedKey, $this->resources)) {
+            return $this->resources[$normalizedKey];
+        }
+
+        if (array_key_exists($normalizedKey, $this->resourcesByName)) {
+            $values = array();
+            $resourceIds = $this->resourcesByName[$normalizedKey];
+
+            foreach ($resourceIds as $resourceId) {
+                if (array_key_exists($resourceId, $this->resources) === false) {
+                    continue;
+                }
+
+                foreach ($this->resources[$resourceId] as $value) {
+                    $values[] = $value;
+                }
+            }
+
+            return count($values) > 0 ? $values : false;
+        }
+
+        return false;
+    }
+
+    /**
+     * All resources
+     */
+    public function getAllResources()
+    {
+        return $this->resources;
     }
 }

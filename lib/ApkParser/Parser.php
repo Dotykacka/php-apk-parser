@@ -1,5 +1,8 @@
 <?php
+
 namespace ApkParser;
+
+use ApkParser\Exceptions\ApkException;
 
 /**
  * This file is part of the Apk Parser package.
@@ -9,7 +12,6 @@ namespace ApkParser;
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-
 class Parser
 {
     private $apk;
@@ -23,18 +25,20 @@ class Parser
     /**
      * @param $apkFile
      * @param array $config
+     * @throws \Exception
      */
-    public function __construct($apkFile, array $config = array())
+    public function __construct($apkFile, array $config = [])
     {
         $this->config = new Config($config);
         $this->apk = new Archive($apkFile);
         $this->manifest = new Manifest(new XmlParser($this->apk->getManifestStream()));
+        $isManifestOnly = (bool)$this->config->get('manifest_only');
 
-        if (!$this->config->manifest_only)
+        if (!$isManifestOnly) {
             $this->resources = new ResourcesParser($this->apk->getResourcesStream());
-        else
-            $this->resources = NULL;
-
+        } else {
+            $this->resources = null;
+        }
     }
 
     /**
@@ -60,11 +64,27 @@ class Parser
         return $this->apk;
     }
 
+    /**
+     * @param $key
+     * @return bool|mixed
+     */
     public function getResources($key)
     {
-        return is_null($this->resources) ? FALSE : $this->resources->getResources($key);
+        return is_null($this->resources) ? false : $this->resources->getResources($key);
     }
 
+    /**
+     * Get all resources as an array
+     */
+    public function getAllResources()
+    {
+        return is_null($this->resources) ? [] : $this->resources->getAllResources();
+    }
+
+    /**
+     * @param $name
+     * @return resource
+     */
     public function getStream($name)
     {
         return $this->apk->getStream($name);
@@ -77,32 +97,50 @@ class Parser
      * @param array $entries
      * @return bool
      */
-    public function extractTo($destination, $entries = NULL)
+    public function extractTo($destination, $entries = null)
     {
         return $this->apk->extractTo($destination, $entries);
     }
 
+    /**
+     * @return array
+     * @throws ApkException
+     * @throws \Exception
+     */
     public function getClasses()
     {
         $dexStream = $this->apk->getClassesDexStream();
         $apkName = $this->apk->getApkName();
+        $jarPath = $this->config->get('jar_path');
+        $javaBinary = $this->config->get('java_binary');
 
         $cache_folder = $this->config->tmp_path . '/' . str_replace('.', '_', $apkName) . '/';
 
         // No folder means no cached data.
-        if (!is_dir($cache_folder))
+        if (!is_dir($cache_folder)) {
             mkdir($cache_folder, 0755, true);
+        }
+
+        if (!is_file($jarPath) || !is_readable($jarPath)) {
+            throw new ApkException('Decompiler jar file not found or not readable: ' . $jarPath);
+        }
+        $this->assertJavaBinaryAvailable($javaBinary);
 
         $dex_file = $cache_folder . '/classes.dex';
         $dexStream->save($dex_file);
 
-        // run shell command to extract  dalvik compiled codes to the cache folder.
-        // Template : java -jar dedexer.jar -d {destination_folder} {source_dex_file}
-        $command = "java -jar {$this->config->jar_path} -d {$cache_folder} {$dex_file}";
-        $returns = shell_exec($command);
+        // Extract dalvik compiled codes to the cache folder.
+        $command = array($javaBinary, '-jar', $jarPath, '-d', $cache_folder, $dex_file);
+        list($exitCode, $stdout, $stderr) = $this->runCommand($command);
 
-        if (!$returns) //TODO : check if it not contains any error. $returns will always contain some output.
-            throw new \Exception("Couldn't decompile .dex file");
+        if ($exitCode !== 0) {
+            $message = "Couldn't decompile .dex file";
+            $details = trim($stderr) !== '' ? trim($stderr) : trim($stdout);
+            if ($details !== '') {
+                $message .= ': ' . $details;
+            }
+            throw new ApkException($message . " (exit code: {$exitCode})");
+        }
 
         $file_list = Utils::globRecursive($cache_folder . '*.ddx');
 
@@ -116,6 +154,46 @@ class Parser
 
 
         return $file_list;
+    }
 
+    /**
+     * @param string $javaBinary
+     * @throws ApkException
+     */
+    private function assertJavaBinaryAvailable($javaBinary)
+    {
+        if (!is_string($javaBinary) || trim($javaBinary) === '') {
+            throw new ApkException('Invalid Java binary configuration');
+        }
+
+        list($exitCode, ) = $this->runCommand(array($javaBinary, '-version'));
+        if ($exitCode !== 0) {
+            throw new ApkException('Java binary is not available: ' . $javaBinary);
+        }
+    }
+
+    /**
+     * @param array $command
+     * @return array
+     * @throws ApkException
+     */
+    private function runCommand(array $command)
+    {
+        $descriptorSpec = array(
+            1 => array('pipe', 'w'),
+            2 => array('pipe', 'w'),
+        );
+        $process = proc_open($command, $descriptorSpec, $pipes);
+        if (!is_resource($process)) {
+            throw new ApkException('Unable to start process');
+        }
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+
+        return array($exitCode, (string)$stdout, (string)$stderr);
     }
 }
